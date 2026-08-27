@@ -1,0 +1,49 @@
+# ==========================================================
+# CivicFlow AI — Requirements
+# Install:  pip install -r requirements.txt
+# Python 3.10 – 3.12 recommended (3.13/3.14 par chromadb aur
+# sentence-transformers reliably build nahi hote).
+# ==========================================================
+
+# --- UI ---
+streamlit>=1.31.0
+
+# --- Database ---
+sqlalchemy>=2.0.0
+
+# --- Auth ---
+passlib>=1.7.4
+
+# --- Data & Visualization ---
+pandas>=2.0.0
+plotly>=5.18.0
+
+# --- Utilities ---
+python-dotenv>=1.0.0
+requests>=2.31.0
+
+# --- LLM + Agent framework (CORE — ye ab optional nahi) ---
+langchain>=0.2.0
+langchain-core>=0.2.0
+langchain-groq>=0.1.5
+langgraph>=0.2.0
+langgraph-checkpoint-sqlite>=1.0.0
+
+# --- Structured outputs ---
+pydantic>=2.6.0
+
+# --- Observability ---
+langsmith>=0.1.0
+
+# --- Vector store / RAG ---
+chromadb>=0.4.24
+langchain-chroma>=0.1.2
+langchain-huggingface>=0.0.3
+sentence-transformers>=2.6.0
+langchain-text-splitters>=0.2.0
+
+# --- Optional LLM fallback provider ---
+langchain-google-genai>=1.0.0
+
+# --- Tests ---
+pytest>=8.0.0

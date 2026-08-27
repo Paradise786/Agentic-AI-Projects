@@ -1,0 +1,70 @@
+"""
+HOW TO USE THIS FILE
+---------------------
+1. In app.py, add this import near the top:
+       from auth import signup_user, login_user
+
+2. In app.py's session-state block, change:
+       if "screen" not in st.session_state: st.session_state["screen"] = "GetStarted"
+   -> no change needed, "GetStarted" stays the entry screen.
+
+3. REPLACE the entire `elif st.session_state["screen"] == "Login":` block
+   in app.py with the code below (it now renders BOTH Sign In and
+   Sign Up, switchable with a toggle, and both are real / DB-backed).
+"""
+
+# --- LOGIN / SIGNUP PAGE ---
+LOGIN_SIGNUP_BLOCK = '''
+elif st.session_state["screen"] == "Login":
+    c_l, c_mid, c_r = st.columns([1, 1.8, 1])
+    with c_mid:
+        mode = st.radio("", ["Sign In", "Create Account"], horizontal=True, label_visibility="collapsed")
+
+        role = st.selectbox(
+            "Authorization Scope",
+            ["Citizen", "Authority Officer", "Admin System"],
+            index=["Citizen", "Authority Officer", "Admin System"].index(st.session_state["selected_login_role"]),
+        )
+
+        if mode == "Sign In":
+            st.markdown("<h2 style='text-align:center;'>Enterprise Sign In</h2>", unsafe_allow_html=True)
+            email = st.text_input("Identity Email")
+            password = st.text_input("Security Passcode", type="password")
+
+            if st.button("Authenticate & Initialize Portal \u2192", use_container_width=True):
+                success, result = login_user(email, password)
+                if success:
+                    st.session_state["authenticated"] = True
+                    st.session_state["username"] = result["email"].split("@")[0]
+                    st.session_state["user_role"] = result["role"]
+                    st.session_state["screen"] = "MainApp"
+                    st.rerun()
+                else:
+                    st.error(result)
+
+        else:
+            st.markdown("<h2 style='text-align:center;'>Create Your Account</h2>", unsafe_allow_html=True)
+            full_name = st.text_input("Full Name")
+            email = st.text_input("Identity Email")
+            password = st.text_input("Choose a Passcode", type="password")
+            confirm = st.text_input("Confirm Passcode", type="password")
+
+            if st.button("Create Account \u2192", use_container_width=True):
+                if password != confirm:
+                    st.error("Passcodes do not match.")
+                else:
+                    role_map = {"Citizen": "Citizen", "Authority Officer": "Authority", "Admin System": "Admin"}
+                    success, message = signup_user(email, password, role_map[role], full_name)
+                    if success:
+                        st.success(message + " Please sign in now.")
+                    else:
+                        st.error(message)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("\u2190 Return Home", use_container_width=True):
+            st.session_state["screen"] = "GetStarted"
+            st.rerun()
+'''
+
+print("Copy the LOGIN_SIGNUP_BLOCK string content above (without the ''' quotes) "
+      "into app.py, replacing the old Login elif block.")
