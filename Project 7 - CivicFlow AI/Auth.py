@@ -23,7 +23,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         return True
     # Fallback check for plain text or sha256
     simple_sha = hashlib.sha256(plain_password.encode('utf-8')).hexdigest()
-    if simple_sha == hashed_password or plain_password == hashed_password:
+    if simple_sha == hashed_password:
         return True
     return False
 

@@ -40,10 +40,11 @@ from settings import (
 # IMPORTS
 # ==========================================================
 
-try:
-    from orchestrator_pipeline import execute_civic_ai_pipeline
-except Exception:
-    execute_civic_ai_pipeline = None
+# Real agent workflow imports
+
+# NEW imports for real agent workflow
+from civic_graph import civic_agent
+from guardrails import validate_complaint
 
 try:
     from database import (
@@ -88,6 +89,35 @@ except Exception:
         st.session_state["authenticated"] = False
         st.session_state["screen"] = "GetStarted"
 
+def save_ticket_to_db(user_email: str, complaint_text: str, location: str, lat: str, lon: str,
+                     department: str, risk_level: str, summary: str) -> str:
+    """Persist a ticket record and return its ID.
+    If the database models are unavailable, fall back to a placeholder ID.
+    """
+    try:
+        if SessionLocal and TicketModel:
+            db = SessionLocal()
+            new_ticket = TicketModel(
+                ticket_id=f"CF-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+                citizen_id=user_email,
+                location=location,
+                latitude=lat,
+                longitude=lon,
+                raw_text=complaint_text,
+                assigned_agency=department,
+                risk_score=int(risk_level) if risk_level.isdigit() else 50,
+                ai_summary=summary,
+                created_at=datetime.utcnow()
+            )
+            db.add(new_ticket)
+            db.commit()
+            ticket_id = new_ticket.ticket_id
+            db.close()
+            return ticket_id
+    except Exception:
+        pass
+    # Fallback for demo mode
+    return "CF-TEMP"
 try:
     from chatbot_engine import generate_citizen_response
     CHATBOT_AVAILABLE = True
@@ -767,7 +797,7 @@ elif st.session_state["screen"] == "Login":
                     if success:
                         st.session_state["authenticated"] = True
                         st.session_state["user_email"] = email_clean
-                        st.session_state["username"] = email_clean.split("@")[0]
+                        st.session_state["username"] = email_clean
                         st.session_state["user_role"] = user_role
                         st.session_state["screen"] = "MainApp"
                         for k in ["nav_citizen", "nav_authority", "nav_admin"]:
@@ -1115,23 +1145,6 @@ elif st.session_state["screen"] == "MainApp" and st.session_state["authenticated
                     except Exception:
                         pass
 
-                # Smart priority and risk score prediction live preview
-                if len(desc_input.strip()) > 5:
-                    try:
-                        from orchestrator_pipeline import _evaluate_risk_and_sla
-                        risk_score, priority, is_emergency, _, reasons = _evaluate_risk_and_sla(desc_input)
-                        badge_color = "red" if priority == "Critical" else ("orange" if priority == "High" else ("#00BFA5" if priority == "Medium" else "green"))
-                        st.markdown(f"""
-                        <div style="background:#F8FAFC; border:1px solid #E2E8F0; padding:10px; border-radius:8px; margin-bottom:12px;">
-                            <b>🤖 AI Smart Priority & Risk Preview:</b><br>
-                            • Risk Score: <span style="font-weight:700; color:{badge_color};">{risk_score}/100</span><br>
-                            • Assigned Priority: <span style="font-weight:700; color:{badge_color};">{priority.upper()}</span><br>
-                            • Expected SLA: <b>{"2 Hours" if priority=="Critical" else ("12 Hours" if priority=="High" else "24 Hours")}</b>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    except Exception:
-                        pass
-
                 c1, c2 = st.columns(2)
                 with c1:
                     if st.button("← Back", use_container_width=True):
@@ -1202,23 +1215,36 @@ elif st.session_state["screen"] == "MainApp" and st.session_state["authenticated
                 with c2:
                     if st.button("⚡ Submit to CivicFlow AI", type="primary", use_container_width=True):
                         try:
-                            if execute_civic_ai_pipeline:
+                            # Validate complaint using guardrails
+                            complaint_text = st.session_state["wizard_category"] + " " + st.session_state["wizard_description"]
+                            user_email = st.session_state["user_email"]
+                            validation = validate_complaint(complaint_text)
+                            if not validation.is_safe:
+                                st.error(f"Error: {validation.rejection_reason}")
+                            else:
                                 with st.spinner("AI agents are analyzing your issue..."):
-                                    result = execute_civic_ai_pipeline(
-                                        st.session_state["user_email"],
-                                        (st.session_state["wizard_category"] + " " + st.session_state["wizard_description"]),
-                                        (st.session_state["wizard_evidence"] or ""),
-                                        st.session_state["wizard_location"],
-                                        summary_lat,
-                                        summary_lon
-                                    )
+                                    result = civic_agent.invoke({
+                                        "complaint": complaint_text,
+                                        "user_email": user_email,
+                                        "department": "",
+                                        "risk_level": ""
+                                    })
                                 ticket_id = result.get("ticket_id", "CF-DEMO-001")
                                 priority_result = result.get("priority", "Medium")
                                 agency_result = result.get("assigned_agency", "Municipal Services")
-                            else:
-                                ticket_id = "CF-DEMO-001"
-                                priority_result = "Medium"
-                                agency_result = "Municipal Services"
+                                # Persist the ticket using the helper
+                                saved_ticket_id = save_ticket_to_db(
+                                    user_email,
+                                    complaint_text,
+                                    st.session_state["wizard_location"],
+                                    summary_lat,
+                                    summary_lon,
+                                    agency_result,
+                                    result.get("risk_level", ""),
+                                    result.get("summary", "")
+                                )
+                                # Overwrite ticket_id for further use if needed
+                                ticket_id = saved_ticket_id
 
                             # Create real notification for this user
                             if create_notification and user_email:
@@ -1650,6 +1676,7 @@ elif st.session_state["screen"] == "MainApp" and st.session_state["authenticated
 
         m1, m2, m3, m4 = st.columns(4)
         metric(m1, "System Health", "99.8%", "#00BFA5")
+        st.caption("️ Telemetry data is simulated for demonstration purposes.")
         flagged_count = len([t for t in tickets if getattr(t, "is_hitl_flagged", False)])
         metric(m2, "HITL Escalations", flagged_count, "#E63963" if flagged_count > 0 else "#00BFA5")
         metric(m3, "AI Agents Active", "6", "#E91E8C")
@@ -1885,6 +1912,7 @@ elif st.session_state["screen"] == "MainApp" and st.session_state["authenticated
 
         elif page == "📈 Telemetry":
             st.markdown("## 📈 AI Pipeline Performance Telemetry")
+            st.caption("⚠️ Telemetry data is simulated for demonstration purposes.")
             
             hours = ["09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00"]
             latency = [0.62, 0.78, 0.54, 0.91, 0.67, 0.58, 0.82, 0.65]
